@@ -36,6 +36,13 @@
       margin: 1rem auto;
     }
 
+    .location-info {
+      text-align: center;
+      font-size: 1rem;
+      margin: 0.5rem auto 1rem;
+      color: var(--accent-yellow);
+    }
+
     .chart-container {
       max-width: 95%;
       margin: 1rem auto;
@@ -102,6 +109,7 @@
 </head>
 <body>
   <h1>RV Weather Safety Forecast</h1>
+  <div class="location-info" id="locationInfo">Getting location...</div>
 
   <h2>Next 24 Hours</h2>
   <div class="chart-container">
@@ -127,13 +135,28 @@
         navigator.geolocation.getCurrentPosition(async (position) => {
           const lat = position.coords.latitude;
           const lon = position.coords.longitude;
+          document.getElementById('locationInfo').textContent = `Lat: ${lat.toFixed(4)}, Lon: ${lon.toFixed(4)} — fetching location...`;
           const forecast = await fetchWeatherForecast(lat, lon);
           displayForecast(forecast);
+          reverseGeocode(lat, lon);
         }, (error) => {
           console.error('Error getting location:', error);
+          document.getElementById('locationInfo').textContent = 'Unable to get location.';
         });
       } else {
         alert('Geolocation is not supported by this browser.');
+      }
+    }
+
+    async function reverseGeocode(lat, lon) {
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
+        const json = await res.json();
+        const place = json.address;
+        const locationText = `${place.city || place.town || place.village || ''}, ${place.state || ''} ${place.postcode || ''}`;
+        document.getElementById('locationInfo').textContent = `Lat: ${lat.toFixed(4)}, Lon: ${lon.toFixed(4)} — ${locationText}`;
+      } catch (e) {
+        console.error('Reverse geocoding failed:', e);
       }
     }
 
