@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>RV Weather Safety Forecast</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="manifest" href="manifest.json">
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js");
+    }
+  </script>
+  <style>
+    :root {
+      --bg-color: #1c1e26;
+      --panel-color: #2b2d3c;
+      --text-color: #e0e0e0;
+      --accent-blue: #007bff;
+      --accent-green: #2ecc71;
+      --accent-red: #ff6b6b;
+      --accent-yellow: #f1c40f;
+    }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+    }
+
+    h1, h2 {
+      color: var(--text-color);
+      text-align: center;
+      margin: 1rem auto;
+    }
+
+    .chart-container {
+      max-width: 95%;
+      margin: 1rem auto;
+      padding: 1rem;
+      background-color: var(--panel-color);
+      border-radius: 12px;
+    }
+
+    .weather-table-wrapper {
+      overflow-x: auto;
+      max-width: 100vw;
+    }
+
+    .weather-table {
+      width: max-content;
+      min-width: 600px;
+      margin: 1rem auto 2rem;
+      border-collapse: collapse;
+      border-radius: 12px;
+      overflow: hidden;
+      background-color: var(--panel-color);
+    }
+
+    .weather-table th, .weather-table td {
+      border: 1px solid #444;
+      padding: 0.6rem;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    .weather-table th {
+      background-color: #353746;
+      color: var(--text-color);
+    }
+
+    .ok {
+      color: var(--accent-green);
+      font-weight: bold;
+    }
+
+    .warn {
+      color: var(--accent-red);
+      font-weight: bold;
+    }
+
+    .metric-label {
+      font-weight: bold;
+      color: var(--accent-blue);
+    }
+
+    @media screen and (max-width: 768px) {
+      h1, h2 {
+        font-size: 1.2rem;
+      }
+      .chart-container {
+        padding: 0.5rem;
+      }
+      .weather-table th, .weather-table td {
+        padding: 0.4rem;
+        font-size: 0.8rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>RV Weather Safety Forecast</h1>
+
+  <h2>Next 24 Hours</h2>
+  <div class="chart-container">
+    <canvas id="hourlyChart"></canvas>
+  </div>
+  <div class="weather-table-wrapper">
+    <table class="weather-table" id="hourlyTable"></table>
+  </div>
+
+  <h2>Next 5 Days</h2>
+  <div class="chart-container">
+    <canvas id="dailyChart"></canvas>
+  </div>
+  <div class="weather-table-wrapper">
+    <table class="weather-table" id="dailyTable"></table>
+  </div>
+
+  <script>
+    const WEATHER_API_BASE = 'https://api.open-meteo.com/v1/forecast';
+
+    function getLocationAndWeather() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(async (position) => {
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+          const forecast = await fetchWeatherForecast(lat, lon);
+          displayForecast(forecast);
+        }, (error) => {
+          console.error('Error getting location:', error);
+        });
+      } else {
+        alert('Geolocation is not supported by this browser.');
+      }
+    }
+
+    async function fetchWeatherForecast(lat, lon) {
+      const url = `${WEATHER_API_BASE}?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,precipitation_probability,precipitation,windspeed_10m,windgusts_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max,windgusts_10m_max&timezone=auto&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch`;
+      const response = await fetch(url);
+      return await response.json();
+    }
+
+    function applyRules(windGust, precip) {
+      return {
+        awningSafe: windGust <= 20,
+        mudRisk: precip >= 0.1
+      };
+    }
+
+    function displayForecast(data) {
+      const now = new Date();
+      const hours = [], hourLabels = [];
+      const days = [], dayLabels = [];
+
+      for (let i = 0; i < data.hourly.time.length; i++) {
+        const time = new Date(data.hourly.time[i]);
+        if (time > now && time - now <= 24 * 60 * 60 * 1000) {
+          const rules = applyRules(data.hourly.windgusts_10m[i], data.hourly.precipitation[i]);
+          hourLabels.push(time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+          hours.push({
+            time: time,
+            temp: data.hourly.temperature_2m[i],
+            wind: data.hourly.windspeed_10m[i],
+            gust: data.hourly.windgusts_10m[i],
+            precip: data.hourly.precipitation[i],
+            precipProb: data.hourly.precipitation_probability[i],
+            ...rules
+          });
+        }
+      }
+
+      for (let i = 0; i < data.daily.time.length; i++) {
+        const rules = applyRules(data.daily.windgusts_10m_max[i], data.daily.precipitation_sum[i]);
+        dayLabels.push(data.daily.time[i]);
+        days.push({
+          date: data.daily.time[i],
+          high: data.daily.temperature_2m_max[i],
+          low: data.daily.temperature_2m_min[i],
+          wind: data.daily.windspeed_10m_max[i],
+          gust: data.daily.windgusts_10m_max[i],
+          precip: data.daily.precipitation_sum[i],
+          ...rules
+        });
+      }
+
+      renderHourlyChart(hourLabels, hours);
+      renderDailyChart(dayLabels, days);
+      renderHourlyTable(hours);
+      renderDailyTable(days);
+    }
+
+    function renderHourlyChart(labels, data) {
+      new Chart(document.getElementById('hourlyChart'), {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Rain (in)',
+              data: data.map(d => d.precip),
+              backgroundColor: '#7FDBFF',
+              yAxisID: 'y2'
+            },
+            {
+              label: 'Gust (mph)',
+              data: data.map(d => d.gust),
+              type: 'line',
+              borderColor: '#FF4136',
+              backgroundColor: 'rgba(255, 65, 54, 0.2)',
+              yAxisID: 'y2',
+              fill: true
+            },
+            {
+              label: 'Temp (°F)',
+              data: data.map(d => d.temp),
+              type: 'line',
+              borderColor: '#2ECC40',
+              backgroundColor: 'rgba(46, 204, 64, 0.2)',
+              yAxisID: 'y1',
+              fill: true
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y1: {
+              position: 'left',
+              title: { display: true, text: 'Temperature (°F)' }
+            },
+            y2: {
+              position: 'right',
+              title: { display: true, text: 'Wind Gust / Rain' },
+              grid: { drawOnChartArea: false }
+            }
+          }
+        }
+      });
+    }
+
+    function renderDailyChart(labels, data) {
+      new Chart(document.getElementById('dailyChart'), {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Rain (in)',
+              data: data.map(d => d.precip),
+              backgroundColor: '#7FDBFF',
+              yAxisID: 'y2'
+            },
+            {
+              label: 'Max Gust (mph)',
+              data: data.map(d => d.gust),
+              type: 'line',
+              borderColor: '#FF4136',
+              backgroundColor: 'rgba(255, 65, 54, 0.2)',
+              yAxisID: 'y2',
+              fill: true
+            },
+            {
+              label: 'High Temp (°F)',
+              data: data.map(d => d.high),
+              type: 'line',
+              borderColor: '#2ECC40',
+              yAxisID: 'y1',
+              fill: false
+            },
+            {
+              label: 'Low Temp (°F)',
+              data: data.map(d => d.low),
+              type: 'line',
+              borderColor: '#0074D9',
+              yAxisID: 'y1',
+              fill: false
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y1: {
+              position: 'left',
+              title: { display: true, text: 'Temperature (°F)' }
+            },
+            y2: {
+              position: 'right',
+              title: { display: true, text: 'Wind Gust / Rain' },
+              grid: { drawOnChartArea: false }
+            }
+          }
+        }
+      });
+    }
+
+    function renderHourlyTable(data) {
+      const table = document.getElementById('hourlyTable');
+      const times = data.map(d => d.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+      const row = (label, values) => `<tr><th class="metric-label">${label}</th>${values.map(v => `<td>${v}</td>`).join('')}</tr>`;
+      table.innerHTML = `
+        <tr><th>Metric</th>${times.map(t => `<th>${t}</th>`).join('')}</tr>
+        ${row('🌡️ Temp (°F)', data.map(d => d.temp))}
+        ${row('💨 Wind (mph)', data.map(d => d.wind))}
+        ${row('🌬️ Gust (mph)', data.map(d => d.gust))}
+        ${row('🌧️ Rain (in)', data.map(d => d.precip))}
+        ${row('🌧️ Chance (%)', data.map(d => d.precipProb + '%'))}
+        ${row('🛠 Awning', data.map(d => d.awningSafe ? '<span class="ok">✅</span>' : '<span class="warn">⚠️</span>'))}
+        ${row('🛣 Dirt', data.map(d => d.mudRisk ? '<span class="warn">⚠️</span>' : '<span class="ok">✅</span>'))}
+      `;
+    }
+
+    function renderDailyTable(data) {
+      const table = document.getElementById('dailyTable');
+      const times = data.map(d => {
+        const date = new Date(d.date);
+        const day = date.toLocaleDateString(undefined, { weekday: 'short' });
+        return `${day}<br>${d.date}`;
+      });
+      const row = (label, values) => `<tr><th class="metric-label">${label}</th>${values.map(v => `<td>${v}</td>`).join('')}</tr>`;
+      table.innerHTML = `
+        <tr><th>Metric</th>${times.map(t => `<th>${t}</th>`).join('')}</tr>
+        ${row('🌡️ High (°F)', data.map(d => d.high))}
+        ${row('🌡️ Low (°F)', data.map(d => d.low))}
+        ${row('💨 Wind (mph)', data.map(d => d.wind))}
+        ${row('🌬️ Gust (mph)', data.map(d => d.gust))}
+        ${row('🌧️ Rain (in)', data.map(d => d.precip))}
+        ${row('🛠 Awning', data.map(d => d.awningSafe ? '<span class="ok">✅</span>' : '<span class="warn">⚠️</span>'))}
+        ${row('🛣 Dirt', data.map(d => d.mudRisk ? '<span class="warn">⚠️</span>' : '<span class="ok">✅</span>'))}
+      `;
+    }
+
+    document.addEventListener('DOMContentLoaded', getLocationAndWeather);
+  </script>
+</body>
+</html>

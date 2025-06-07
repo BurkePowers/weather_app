@@ -1,0 +1,20 @@
+{
+  "name": "RV Weather Safety",
+  "short_name": "RV Weather",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#1c1e26",
+  "theme_color": "#2b2d3c",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
