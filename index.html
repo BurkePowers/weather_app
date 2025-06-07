@@ -339,7 +339,7 @@
         ${row('🌡️ Temp (°F)', data.map(d => d.temp))}
         ${row('💨 Wind (mph)', data.map(d => d.wind))}
         ${row('🌬️ Gust (mph)', data.map(d => d.gust))}
-        ${row('🌧️ Rain (in)', data.map(d => d.precip))}
+        ${row('🌧️ Rain (in)', data.map(d => d.precip*10))}
         ${row('🌧️ Chance (%)', data.map(d => d.precipProb + '%'))}
         ${row('🛠 Awning', data.map(d => d.awningSafe ? '<span class="ok">✅</span>' : '<span class="warn">⚠️</span>'))}
         ${row('🛣 Dirt', data.map(d => d.mudRisk ? '<span class="warn">⚠️</span>' : '<span class="ok">✅</span>'))}
@@ -360,7 +360,7 @@
         ${row('🌡️ Low (°F)', data.map(d => d.low))}
         ${row('💨 Wind (mph)', data.map(d => d.wind))}
         ${row('🌬️ Gust (mph)', data.map(d => d.gust))}
-        ${row('🌧️ Rain (in)', data.map(d => d.precip))}
+        ${row('🌧️ Rain (in)', data.map(d => d.precip*10))}
         ${row('🛠 Awning', data.map(d => d.awningSafe ? '<span class="ok">✅</span>' : '<span class="warn">⚠️</span>'))}
         ${row('🛣 Dirt', data.map(d => d.mudRisk ? '<span class="warn">⚠️</span>' : '<span class="ok">✅</span>'))}
       `;
