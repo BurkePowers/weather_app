@@ -36,11 +36,11 @@
       margin: 1rem auto;
     }
 
-    .location-info {
+    .location {
       text-align: center;
       font-size: 1rem;
-      margin: 0.5rem auto 1rem;
-      color: var(--accent-yellow);
+      margin-top: -0.5rem;
+      color: var(--accent-blue);
     }
 
     .chart-container {
@@ -109,7 +109,7 @@
 </head>
 <body>
   <h1>RV Weather Safety Forecast</h1>
-  <div class="location-info" id="locationInfo">Getting location...</div>
+  <div class="location" id="locationDisplay"></div>
 
   <h2>Next 24 Hours</h2>
   <div class="chart-container">
@@ -135,13 +135,12 @@
         navigator.geolocation.getCurrentPosition(async (position) => {
           const lat = position.coords.latitude;
           const lon = position.coords.longitude;
-          document.getElementById('locationInfo').textContent = `Lat: ${lat.toFixed(4)}, Lon: ${lon.toFixed(4)} — fetching location...`;
+          document.getElementById("locationDisplay").textContent = `Location: ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+          reverseGeocode(lat, lon);
           const forecast = await fetchWeatherForecast(lat, lon);
           displayForecast(forecast);
-          reverseGeocode(lat, lon);
         }, (error) => {
           console.error('Error getting location:', error);
-          document.getElementById('locationInfo').textContent = 'Unable to get location.';
         });
       } else {
         alert('Geolocation is not supported by this browser.');
@@ -150,13 +149,14 @@
 
     async function reverseGeocode(lat, lon) {
       try {
-        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
-        const json = await res.json();
-        const place = json.address;
-        const locationText = `${place.city || place.town || place.village || ''}, ${place.state || ''} ${place.postcode || ''}`;
-        document.getElementById('locationInfo').textContent = `Lat: ${lat.toFixed(4)}, Lon: ${lon.toFixed(4)} — ${locationText}`;
-      } catch (e) {
-        console.error('Reverse geocoding failed:', e);
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`);
+        const data = await response.json();
+        if (data && data.address) {
+          const { city, town, village, state, postcode } = data.address;
+          document.getElementById("locationDisplay").textContent += ` — ${city || town || village || 'Unknown'}, ${state || ''} ${postcode || ''}`;
+        }
+      } catch (err) {
+        console.error("Reverse geocoding failed:", err);
       }
     }
 
@@ -177,6 +177,7 @@
       const now = new Date();
       const hours = [], hourLabels = [];
       const days = [], dayLabels = [];
+      let allTemps = [];
 
       for (let i = 0; i < data.hourly.time.length; i++) {
         const time = new Date(data.hourly.time[i]);
@@ -192,6 +193,7 @@
             precipProb: data.hourly.precipitation_probability[i],
             ...rules
           });
+          allTemps.push(data.hourly.temperature_2m[i]);
         }
       }
 
@@ -207,15 +209,19 @@
           precip: data.daily.precipitation_sum[i],
           ...rules
         });
+        allTemps.push(data.daily.temperature_2m_max[i], data.daily.temperature_2m_min[i]);
       }
 
-      renderHourlyChart(hourLabels, hours);
-      renderDailyChart(dayLabels, days);
+      const tempMin = Math.floor(Math.min(...allTemps) - 10);
+      const tempMax = Math.ceil(Math.max(...allTemps) + 10);
+
+      renderHourlyChart(hourLabels, hours, tempMin, tempMax);
+      renderDailyChart(dayLabels, days, tempMin, tempMax);
       renderHourlyTable(hours);
       renderDailyTable(days);
     }
 
-    function renderHourlyChart(labels, data) {
+    function renderHourlyChart(labels, data, minTemp, maxTemp) {
       new Chart(document.getElementById('hourlyChart'), {
         type: 'bar',
         data: {
@@ -252,6 +258,8 @@
           scales: {
             y1: {
               position: 'left',
+              min: minTemp,
+              max: maxTemp,
               title: { display: true, text: 'Temperature (°F)' }
             },
             y2: {
@@ -264,7 +272,7 @@
       });
     }
 
-    function renderDailyChart(labels, data) {
+    function renderDailyChart(labels, data, minTemp, maxTemp) {
       new Chart(document.getElementById('dailyChart'), {
         type: 'bar',
         data: {
@@ -308,6 +316,8 @@
           scales: {
             y1: {
               position: 'left',
+              min: minTemp,
+              max: maxTemp,
               title: { display: true, text: 'Temperature (°F)' }
             },
             y2: {
