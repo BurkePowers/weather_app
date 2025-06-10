@@ -173,15 +173,23 @@
       };
     }
 
+    function toBrowserDate(timeStr, offset) {
+      if (!timeStr.includes('T')) timeStr += 'T00:00:00';
+      const utc = new Date(timeStr + 'Z');
+      utc.setSeconds(utc.getSeconds() - offset);
+      return utc;
+    }
+
     function displayForecast(data) {
+      const offset = data.utc_offset_seconds || 0;
       const now = new Date();
       const hours = [], hourLabels = [];
       const days = [], dayLabels = [];
       let allTemps = [];
 
       for (let i = 0; i < data.hourly.time.length; i++) {
-        const time = new Date(data.hourly.time[i]);
-        if (time > now && time - now <= 24 * 60 * 60 * 1000) {
+        const time = toBrowserDate(data.hourly.time[i], offset);
+        if (time >= now && time - now < 24 * 60 * 60 * 1000) {
           const rules = applyRules(data.hourly.windgusts_10m[i], data.hourly.precipitation[i]);
           hourLabels.push(time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
           hours.push({
@@ -197,19 +205,25 @@
         }
       }
 
+      const today = new Date();
+      today.setHours(0,0,0,0);
       for (let i = 0; i < data.daily.time.length; i++) {
-        const rules = applyRules(data.daily.windgusts_10m_max[i], data.daily.precipitation_sum[i]);
-        dayLabels.push(data.daily.time[i]);
-        days.push({
-          date: data.daily.time[i],
-          high: data.daily.temperature_2m_max[i],
-          low: data.daily.temperature_2m_min[i],
-          wind: data.daily.windspeed_10m_max[i],
-          gust: data.daily.windgusts_10m_max[i],
-          precip: data.daily.precipitation_sum[i],
-          ...rules
-        });
-        allTemps.push(data.daily.temperature_2m_max[i], data.daily.temperature_2m_min[i]);
+        const dateObj = toBrowserDate(data.daily.time[i], offset);
+        if (dateObj >= today && days.length < 5) {
+          const dateStr = dateObj.toISOString().split('T')[0];
+          const rules = applyRules(data.daily.windgusts_10m_max[i], data.daily.precipitation_sum[i]);
+          dayLabels.push(dateObj.toLocaleDateString(undefined, { weekday: 'short' }));
+          days.push({
+            date: dateStr,
+            high: data.daily.temperature_2m_max[i],
+            low: data.daily.temperature_2m_min[i],
+            wind: data.daily.windspeed_10m_max[i],
+            gust: data.daily.windgusts_10m_max[i],
+            precip: data.daily.precipitation_sum[i],
+            ...rules
+          });
+          allTemps.push(data.daily.temperature_2m_max[i], data.daily.temperature_2m_min[i]);
+        }
       }
 
       const tempMin = Math.floor(Math.min(...allTemps) - 10);
