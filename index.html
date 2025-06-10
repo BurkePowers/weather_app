@@ -185,15 +185,18 @@
     }
 
     async function fetchWeatherForecast(lat, lon) {
-      const url = `${WEATHER_API_BASE}?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,precipitation_probability,precipitation,windspeed_10m,windgusts_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max,windgusts_10m_max&timezone=auto&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch`;
+      const url = `${WEATHER_API_BASE}?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,dew_point_2m,precipitation_probability,precipitation,windspeed_10m,windgusts_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max,windgusts_10m_max&timezone=auto&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch`;
       const response = await fetch(url);
       return await response.json();
     }
 
-    function applyRules(windGust, precip) {
+    function applyRules(temp, dew, wind, windGust, precip) {
       return {
         awningSafe: windGust <= 20,
-        mudRisk: precip >= 0.1
+        mudRisk: precip >= 0.15 && wind <= 10,
+        freezeRisk: temp <= 32,
+        drivingRisk: wind > 25 || windGust > 40,
+        condensationRisk: dew !== undefined ? Math.abs(temp - dew) <= 2 : false
       };
     }
 
@@ -214,7 +217,13 @@
       for (let i = 0; i < data.hourly.time.length; i++) {
         const time = toBrowserDate(data.hourly.time[i], offset);
         if (time >= now && time - now < 24 * 60 * 60 * 1000) {
-          const rules = applyRules(data.hourly.windgusts_10m[i], data.hourly.precipitation[i]);
+          const rules = applyRules(
+            data.hourly.temperature_2m[i],
+            data.hourly.dew_point_2m[i],
+            data.hourly.windspeed_10m[i],
+            data.hourly.windgusts_10m[i],
+            data.hourly.precipitation[i]
+          );
           hourLabels.push(time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
           hours.push({
             time: time,
@@ -235,7 +244,13 @@
         const dateObj = toBrowserDate(data.daily.time[i], offset);
         if (dateObj >= today && days.length < 5) {
           const dateStr = dateObj.toISOString().split('T')[0];
-          const rules = applyRules(data.daily.windgusts_10m_max[i], data.daily.precipitation_sum[i]);
+          const rules = applyRules(
+            data.daily.temperature_2m_min[i],
+            undefined,
+            data.daily.windspeed_10m_max[i],
+            data.daily.windgusts_10m_max[i],
+            data.daily.precipitation_sum[i]
+          );
           dayLabels.push(dateObj.toLocaleDateString(undefined, { weekday: 'short' }));
           days.push({
             date: dateStr,
@@ -376,7 +391,12 @@
           <strong>Now (${current.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})</strong><br>
           ${current.temp}&deg;F, wind ${current.wind} mph (gust ${current.gust} mph)<br>
           Rain ${current.precip.toFixed(2)} in (${current.precipProb}% chance)<br>
-          Awning: ${current.awningSafe ? '<span class="ok">✅ Safe</span>' : '<span class="warn">⚠️ Unsafe</span>'} | Dirt: ${current.mudRisk ? '<span class="warn">⚠️ Muddy</span>' : '<span class="ok">✅ Good</span>'}
+          Awning: ${current.awningSafe ? '<span class="ok">✅ Safe</span>' : '<span class="warn">⚠️ Unsafe</span>'} |
+          Dirt: ${current.mudRisk ? '<span class="warn">⚠️ Muddy</span>' : '<span class="ok">✅ Good</span>'}<br>
+          Freeze: ${current.freezeRisk ? '<span class="warn">⚠️ Risk</span>' : '<span class="ok">✅ None</span>'} |
+          Drive: ${current.drivingRisk ? '<span class="warn">⚠️ Hazard</span>' : '<span class="ok">✅ OK</span>'} |
+          Condens: ${current.condensationRisk ? '<span class="warn">⚠️</span>' : '<span class="ok">✅</span>'}
+
         `;
       }
       const table = document.getElementById('glanceTable');
@@ -391,6 +411,9 @@
         ${row('Chance', slice.map(d => d.precipProb + '%'))}
         ${row('Awning', slice.map(d => d.awningSafe ? '<span class="ok">✅</span>' : '<span class="warn">⚠️</span>'))}
         ${row('Dirt', slice.map(d => d.mudRisk ? '<span class="warn">⚠️</span>' : '<span class="ok">✅</span>'))}
+        ${row('Freeze', slice.map(d => d.freezeRisk ? '<span class="warn">⚠️</span>' : '<span class="ok">✅</span>'))}
+        ${row('Drive', slice.map(d => d.drivingRisk ? '<span class="warn">⚠️</span>' : '<span class="ok">✅</span>'))}
+        ${row('Cond', slice.map(d => d.condensationRisk ? '<span class="warn">⚠️</span>' : '<span class="ok">✅</span>'))}
       `;
     }
 
@@ -407,6 +430,9 @@
         ${row('🌧️ Chance (%)', data.map(d => d.precipProb + '%'))}
         ${row('🛠 Awning', data.map(d => d.awningSafe ? '<span class="ok">✅</span>' : '<span class="warn">⚠️</span>'))}
         ${row('🛣 Dirt', data.map(d => d.mudRisk ? '<span class="warn">⚠️</span>' : '<span class="ok">✅</span>'))}
+        ${row('🧊 Freeze', data.map(d => d.freezeRisk ? '<span class="warn">⚠️</span>' : '<span class="ok">✅</span>'))}
+        ${row('🚐 Drive', data.map(d => d.drivingRisk ? '<span class="warn">⚠️</span>' : '<span class="ok">✅</span>'))}
+        ${row('💧 Cond', data.map(d => d.condensationRisk ? '<span class="warn">⚠️</span>' : '<span class="ok">✅</span>'))}
       `;
     }
 
@@ -427,6 +453,8 @@
         ${row('🌧️ Rain (in)', data.map(d => d.precip.toFixed(2)))}
         ${row('🛠 Awning', data.map(d => d.awningSafe ? '<span class="ok">✅</span>' : '<span class="warn">⚠️</span>'))}
         ${row('🛣 Dirt', data.map(d => d.mudRisk ? '<span class="warn">⚠️</span>' : '<span class="ok">✅</span>'))}
+        ${row('🧊 Freeze', data.map(d => d.freezeRisk ? '<span class="warn">⚠️</span>' : '<span class="ok">✅</span>'))}
+        ${row('🚐 Drive', data.map(d => d.drivingRisk ? '<span class="warn">⚠️</span>' : '<span class="ok">✅</span>'))}
       `;
     }
 
